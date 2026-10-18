@@ -15,21 +15,26 @@ const sanitize = (user) => {
   delete obj.password;
   delete obj.emailVerificationToken;
   delete obj.emailVerificationExpires;
+  delete obj.passwordResetToken;
+  delete obj.passwordResetExpires;
   delete obj.__v;
   return obj;
 };
 
+// On stocke seulement le hash du token : s'il fuit, il est inutilisable
 const hashToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
 const removeFiles = (files = []) =>
   files.forEach((f) => fs.unlink(f.path, () => {}));
 
+/* ------------------------- Confirmation d'email ------------------------- */
+
 const sendVerificationEmail = async (user) => {
   const token = crypto.randomBytes(32).toString("hex");
 
   user.emailVerificationToken = hashToken(token);
-  user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
+  user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24h
   await user.save();
 
   const baseUrl = process.env.BACKEND_URL || "http://localhost:5000";
@@ -54,6 +59,8 @@ const sendVerificationEmail = async (user) => {
   });
 };
 
+/* ------------------------------ Inscriptions ----------------------------- */
+
 const registerPatient = async (data) => {
   const existing = await User.findOne({ email: data.email });
   if (existing) throw new ApiError(409, "Cet email est déjà utilisé");
@@ -74,7 +81,7 @@ const registerPatient = async (data) => {
   try {
     await sendVerificationEmail(user);
   } catch (error) {
-    console.error("Erreur envoi email :", error.message);
+    console.error("Erreur envoi email :", error);
     await User.deleteOne({ _id: user._id });
     throw new ApiError(
       500,
@@ -159,7 +166,7 @@ const resendVerification = async (email) => {
     try {
       await sendVerificationEmail(user);
     } catch (error) {
-      console.error("Erreur envoi email :", error.message);
+      console.error("Erreur envoi email :", error);
       throw new ApiError(
         500,
         "Impossible d'envoyer l'email, réessayez plus tard"
@@ -167,6 +174,67 @@ const resendVerification = async (email) => {
     }
   }
 };
+
+/* ------------------------ Mot de passe oublié ---------------------------- */
+
+const forgotPassword = async (email) => {
+  const user = await User.findOne({ email });
+
+  // Compte inexistant ou suspendu : on ne fait rien et on ne le révèle pas
+  if (!user || !user.estActif) return;
+
+  const token = crypto.randomBytes(32).toString("hex");
+  user.passwordResetToken = hashToken(token);
+  user.passwordResetExpires = Date.now() + 60 * 60 * 1000; // 1h
+  await user.save();
+
+  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+  const link = `${clientUrl}/reset-password/${token}`;
+
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: "Réinitialisation de votre mot de passe - CardioDerma",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto;">
+          <h2>Bonjour ${user.prenom},</h2>
+          <p>Vous avez demandé à réinitialiser votre mot de passe.</p>
+          <p>
+            <a href="${link}"
+               style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;">
+              Choisir un nouveau mot de passe
+            </a>
+          </p>
+          <p style="color:#666;font-size:13px;">Ce lien est valable 1 heure. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email : votre mot de passe ne sera pas modifié.</p>
+        </div>
+      `,
+    });
+  } catch (error) {
+    // On annule le token, on log l'erreur, mais on ne change pas la réponse
+    // pour ne pas révéler si l'email existe
+    console.error("Erreur envoi email :", error);
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
+  }
+};
+
+const resetPassword = async (token, newPassword) => {
+  const user = await User.findOne({
+    passwordResetToken: hashToken(token),
+    passwordResetExpires: { $gt: Date.now() },
+  }).select("+passwordResetToken +passwordResetExpires");
+
+  if (!user) throw new ApiError(400, "Lien invalide ou expiré");
+
+  // Le hook du modèle vérifie les règles puis hashe le mot de passe
+  user.password = newPassword;
+  user.passwordResetToken = undefined;
+  user.passwordResetExpires = undefined;
+  await user.save();
+};
+
+/* --------------------------------- Login --------------------------------- */
 
 const login = async ({ email, password }) => {
   const user = await User.findOne({ email }).select("+password");
@@ -176,7 +244,10 @@ const login = async ({ email, password }) => {
   }
 
   if (!user.estActif) {
-    throw new ApiError(403, "Votre compte a été suspendu");
+    const motif = user.motifBannissement
+      ? ` Motif : ${user.motifBannissement}`
+      : "";
+    throw new ApiError(403, `Votre compte a été banni.${motif}`);
   }
 
   if (user.role === "patient" && !user.emailVerifie) {
@@ -202,5 +273,7 @@ module.exports = {
   registerMedecin,
   verifyEmail,
   resendVerification,
+  forgotPassword,
+  resetPassword,
   login,
 };

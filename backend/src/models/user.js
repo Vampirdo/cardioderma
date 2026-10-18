@@ -36,7 +36,6 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: [true, "Le mot de passe est obligatoire"],
-      minlength: 8,
       select: false,
     },
     telephone: {
@@ -64,12 +63,46 @@ const userSchema = new mongoose.Schema(
     emailVerificationToken: { type: String, select: false },
     emailVerificationExpires: { type: Date, select: false },
 
-    // Gestion de compte (admin : suspendre / bannir)
+    // Réinitialisation du mot de passe
+    passwordResetToken: { type: String, select: false },
+    passwordResetExpires: { type: Date, select: false },
+
+    // Décision de l'admin sur le compte médecin
+    motifRefus: { type: String, trim: true },
+    dateDecision: { type: Date },
+    decidePar: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // Bannissement par l'admin
+    motifBannissement: { type: String, trim: true },
+    dateBannissement: { type: Date },
+    banniPar: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // false = compte banni
     estActif: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
 
+// Le mot de passe en clair est vérifié AVANT le hash (patient et médecin)
+userSchema.pre("validate", function () {
+  if (this.role === "admin") return;
+  if (!this.isModified("password")) return;
+
+  const pwd = this.password || "";
+  if (pwd.length < 8) {
+    this.invalidate(
+      "password",
+      "Le mot de passe doit contenir au moins 8 caractères"
+    );
+  } else if (!/[A-Z]/.test(pwd)) {
+    this.invalidate(
+      "password",
+      "Le mot de passe doit contenir au moins une majuscule"
+    );
+  }
+});
+
+// Hash du mot de passe avant sauvegarde
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
   this.password = await bcrypt.hash(this.password, 10);

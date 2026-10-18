@@ -56,6 +56,24 @@ const resendVerification = async (req, res) => {
   });
 };
 
+const forgotPassword = async (req, res) => {
+  await authService.forgotPassword(req.body.email);
+  res.status(200).json({
+    success: true,
+    message:
+      "Si un compte existe avec cet email, un lien de réinitialisation vient d'être envoyé.",
+  });
+};
+
+const resetPassword = async (req, res) => {
+  await authService.resetPassword(req.params.token, req.body.password);
+  res.status(200).json({
+    success: true,
+    message:
+      "Mot de passe modifié avec succès. Vous pouvez maintenant vous connecter.",
+  });
+};
+
 const login = async (req, res) => {
   const { user, token } = await authService.login(req.body);
   res.status(200).json({
@@ -71,5 +89,7 @@ module.exports = {
   registerMedecin,
   verifyEmail,
   resendVerification,
+  forgotPassword,
+  resetPassword,
   login,
 };

@@ -4,7 +4,10 @@ const emailRule = body("email").trim().isEmail().withMessage("Email invalide");
 
 const passwordRule = body("password")
   .isLength({ min: 8 })
-  .withMessage("Le mot de passe doit contenir au moins 8 caractères");
+  .withMessage("Le mot de passe doit contenir au moins 8 caractères")
+  .bail()
+  .matches(/[A-Z]/)
+  .withMessage("Le mot de passe doit contenir au moins une majuscule");
 
 const identityRules = [
   body("nom").trim().notEmpty().withMessage("Le nom est obligatoire"),
@@ -45,6 +48,7 @@ const registerMedecinRules = [
     .withMessage("Le numéro d'ordre est obligatoire"),
 ];
 
+// Le login ne vérifie PAS la force du mot de passe : seulement qu'il est présent
 const loginRules = [
   emailRule,
   body("password").notEmpty().withMessage("Le mot de passe est obligatoire"),
@@ -52,9 +56,16 @@ const loginRules = [
 
 const resendVerificationRules = [emailRule];
 
+const forgotPasswordRules = [emailRule];
+
+// Le nouveau mot de passe suit les mêmes règles qu'à l'inscription
+const resetPasswordRules = [passwordRule];
+
 module.exports = {
   registerPatientRules,
   registerMedecinRules,
   loginRules,
   resendVerificationRules,
+  forgotPasswordRules,
+  resetPasswordRules,
 };
