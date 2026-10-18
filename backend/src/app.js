@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const routes = require("./routes");
+const { notFound, errorHandler } = require("./middlewares/error.middleware");
 
 const app = express();
 
@@ -18,5 +20,11 @@ app.get("/", (req, res) => {
 app.get("/api/health", (req, res) => {
   res.json({ status: "OK", project: "CardioDerma" });
 });
+
+app.use("/api", routes);
+
+// Toujours en dernier
+app.use(notFound);
+app.use(errorHandler);
 
 module.exports = app;
