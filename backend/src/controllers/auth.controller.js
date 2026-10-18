@@ -10,7 +10,16 @@ const registerPatient = async (req, res) => {
   });
 };
 
-// Appelé quand le patient clique sur le lien dans l'email
+const registerMedecin = async (req, res) => {
+  const user = await authService.registerMedecin(req.body, req.files);
+  res.status(201).json({
+    success: true,
+    message:
+      "Demande d'inscription envoyée. Votre compte sera accessible après validation par l'administrateur.",
+    user,
+  });
+};
+
 const verifyEmail = async (req, res) => {
   const page = (titre, texte) => `
     <div style="font-family: Arial, sans-serif; text-align: center; margin-top: 80px;">
@@ -21,12 +30,20 @@ const verifyEmail = async (req, res) => {
   try {
     await authService.verifyEmail(req.params.token);
     res.send(
-      page("Email confirmé ✅", "Votre compte est activé. Vous pouvez maintenant vous connecter.")
+      page(
+        "Email confirmé ✅",
+        "Votre compte est activé. Vous pouvez maintenant vous connecter."
+      )
     );
   } catch (error) {
     res
       .status(error.statusCode || 500)
-      .send(page("Lien invalide ❌", "Ce lien est invalide ou a expiré. Demandez un nouvel email de confirmation."));
+      .send(
+        page(
+          "Lien invalide ❌",
+          "Ce lien est invalide ou a expiré. Demandez un nouvel email de confirmation."
+        )
+      );
   }
 };
 
@@ -49,4 +66,10 @@ const login = async (req, res) => {
   });
 };
 
-module.exports = { registerPatient, verifyEmail, resendVerification, login };
+module.exports = {
+  registerPatient,
+  registerMedecin,
+  verifyEmail,
+  resendVerification,
+  login,
+};
