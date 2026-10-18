@@ -4,7 +4,8 @@ import Register from "./pages/Register";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
-
+import AdminRoute from "./components/AdminRoute";
+import AdminDashboard from "./pages/AdminDashboard";
 export default function App() {
   return (
     <Routes>
@@ -13,6 +14,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password/:token" element={<ResetPassword />} />
+      <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute> }/>
     </Routes>
   );
 }

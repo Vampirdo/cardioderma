@@ -30,7 +30,7 @@ export default function Login() {
   };
 
   return (
-    <AuthLayout title="Bon retour 👋" subtitle="Connectez-vous pour accéder à vos espaces.">
+    <AuthLayout title="Bon retour" subtitle="Connectez-vous pour accéder à vos espaces.">
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <InputField label="Adresse email" name="email" type="email" value={form.email} onChange={handleChange} error={errors.email} placeholder="exemple@email.com" autoComplete="email" />
         <InputField label="Mot de passe" name="password" type="password" value={form.password} onChange={handleChange} error={errors.password} placeholder="Votre mot de passe" autoComplete="current-password" />
