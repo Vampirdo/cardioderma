@@ -38,13 +38,15 @@ const ACTIONS = {
   },
   reject: {
     title: "Refuser cette demande ?",
-    desc: "Le médecin ne pourra pas se connecter. Vous pouvez indiquer un motif.",
+    desc: "Le médecin ne pourra pas se connecter. Le motif lui sera envoyé par email.",
     label: "Refuser", ok: "Demande refusée", icon: X, danger: true,
+    reason: "Motif du refus",
   },
   ban: {
     title: "Bannir ce compte ?",
-    desc: "Il ne pourra plus se connecter tant que vous ne l'aurez pas débanni.",
+    desc: "Il ne pourra plus se connecter. Le motif lui sera envoyé par email.",
     label: "Bannir", ok: "Compte banni", icon: Ban, danger: true,
+    reason: "Motif du bannissement",
   },
   unban: {
     title: "Débannir ce compte ?",
@@ -149,7 +151,7 @@ function Empty({ icon: Icon, title, text }) {
   );
 }
 
-function PendingCard({ d, onApprove, onReject }) {
+function PendingCard({ d, onApprove, onReject, onOpen }) {
   return (
     <article className="rounded-2xl border border-brand-100 bg-white p-5 transition hover:border-brand-500/40 hover:shadow-sm">
       <div className="flex items-start gap-4">
@@ -164,22 +166,29 @@ function PendingCard({ d, onApprove, onReject }) {
           <p className="mt-0.5 text-sm text-brand-900/55">N° d'ordre {d.licenseNumber}</p>
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-brand-900/70">
             <span className="flex items-center gap-1.5"><Mail size={14} className="text-brand-600" />{d.email}</span>
-            <span className="flex items-center gap-1.5"><Phone size={14} className="text-brand-600" />{d.phone}</span>
+            {d.phone && (
+              <span className="flex items-center gap-1.5"><Phone size={14} className="text-brand-600" />{d.phone}</span>
+            )}
             <span className="flex items-center gap-1.5"><CalendarDays size={14} className="text-brand-600" />{formatDate(d.createdAt)}</span>
           </div>
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-brand-100 pt-4">
-        {d.diplomaUrl ? (
-          <a
-            href={d.diplomaUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-xl border border-brand-100 px-3.5 py-2 text-sm font-semibold text-brand-900 transition hover:border-coral hover:text-coral"
-          >
-            <FileText size={16} /> Consulter les diplômes
-          </a>
+        {d.justificatifsCount > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: d.justificatifsCount }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onOpen(d, i)}
+                className="inline-flex items-center gap-2 rounded-xl border border-brand-100 px-3.5 py-2 text-sm font-semibold text-brand-900 transition hover:border-coral hover:text-coral"
+              >
+                <FileText size={16} />
+                {d.justificatifsCount === 1 ? "Consulter les diplômes" : `Document ${i + 1}`}
+              </button>
+            ))}
+          </div>
         ) : (
           <span className="text-sm text-brand-900/45">Aucun diplôme joint</span>
         )}
@@ -267,13 +276,22 @@ export default function AdminDashboard() {
     setModal({ action, user });
   };
 
+  const openDiploma = async (d, index) => {
+    try {
+      await adminApi.openJustificatif(d.id, index);
+    } catch (e) {
+      notify(e.message, "error");
+    }
+  };
+
   const runAction = async () => {
     const { action, user } = modal;
+    const motif = reason.trim();
     setBusy(true);
     try {
       if (action === "approve") await adminApi.approve(user.id);
-      if (action === "reject") await adminApi.reject(user.id, reason);
-      if (action === "ban") await adminApi.ban(user.id);
+      if (action === "reject") await adminApi.reject(user.id, motif);
+      if (action === "ban") await adminApi.ban(user.id, motif);
       if (action === "unban") await adminApi.unban(user.id);
       if (action === "delete") await adminApi.remove(user.id);
       notify(ACTIONS[action].ok);
@@ -500,7 +518,13 @@ export default function AdminDashboard() {
                   <Empty icon={Inbox} title="Aucune demande en attente" text="Les nouveaux médecins inscrits apparaîtront ici." />
                 ) : (
                   pending.slice(0, 3).map((d) => (
-                    <PendingCard key={d.id} d={d} onApprove={(u) => openModal("approve", u)} onReject={(u) => openModal("reject", u)} />
+                    <PendingCard
+                      key={d.id}
+                      d={d}
+                      onApprove={(u) => openModal("approve", u)}
+                      onReject={(u) => openModal("reject", u)}
+                      onOpen={openDiploma}
+                    />
                   ))
                 )}
               </section>
@@ -514,7 +538,13 @@ export default function AdminDashboard() {
                 <Empty icon={Inbox} title="Aucune demande en attente" text="Les nouveaux médecins inscrits apparaîtront ici." />
               ) : (
                 pending.map((d) => (
-                  <PendingCard key={d.id} d={d} onApprove={(u) => openModal("approve", u)} onReject={(u) => openModal("reject", u)} />
+                  <PendingCard
+                    key={d.id}
+                    d={d}
+                    onApprove={(u) => openModal("approve", u)}
+                    onReject={(u) => openModal("reject", u)}
+                    onOpen={openDiploma}
+                  />
                 ))
               )}
             </section>
@@ -666,12 +696,13 @@ export default function AdminDashboard() {
                 <AlertTriangle size={16} /> Cette action est irréversible.
               </p>
             )}
-            {modal.action === "reject" && (
+            {cfg.reason && (
               <textarea
                 className="input mt-4 min-h-[90px]"
-                placeholder="Motif du refus (optionnel)"
+                placeholder={`${cfg.reason} (obligatoire)`}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
+                autoFocus
               />
             )}
 
@@ -681,7 +712,7 @@ export default function AdminDashboard() {
               </button>
               <button
                 onClick={runAction}
-                disabled={busy}
+                disabled={busy || (cfg.reason && !reason.trim())}
                 className={
                   cfg.danger
                     ? "inline-flex items-center gap-2 rounded-full bg-coral px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"

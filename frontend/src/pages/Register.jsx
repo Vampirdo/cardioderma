@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
+  CheckCircle2,
   FileText,
   FileUp,
   Stethoscope,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import AuthLayout from "../components/AuthLayout";
 import InputField from "../components/InputField";
+import { authApi } from "../services/authApi";
 
 const MAX_PDF_SIZE = 5 * 1024 * 1024; // 5 Mo
 
@@ -32,22 +34,24 @@ export default function Register() {
   const [step, setStep] = useState(1);
   const [role, setRole] = useState("patient"); // "patient" | "doctor"
   const [form, setForm] = useState(initialForm);
-  const [photo, setPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [diploma, setDiploma] = useState(null);
   const [accepted, setAccepted] = useState(false);
   const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
     setErrors({ ...errors, [e.target.name]: undefined });
+    setServerError("");
   };
 
+  // La photo n'est pas encore envoyée : le backend ne la gère pas pour l'instant
   const handlePhoto = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPhoto(file);
     setPhotoPreview(URL.createObjectURL(file));
   };
 
@@ -85,6 +89,7 @@ export default function Register() {
     if (!/^(\+216)?\s?\d{2}\s?\d{3}\s?\d{3}$/.test(form.phone.trim()))
       err.phone = "Numéro tunisien invalide (+216 XX XXX XXX)";
     if (form.password.length < 8) err.password = "8 caractères minimum";
+    else if (!/[A-Z]/.test(form.password)) err.password = "Au moins une majuscule";
     if (form.confirmPassword !== form.password)
       err.confirmPassword = "Les mots de passe ne correspondent pas";
     if (role === "doctor") {
@@ -101,7 +106,7 @@ export default function Register() {
     if (Object.keys(err).length === 0) setStep(2);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (step === 1) return handleNext();
 
@@ -109,17 +114,59 @@ export default function Register() {
     setErrors(err);
     if (Object.keys(err).length > 0) return;
 
-    setLoading(true);
-    const data = new FormData();
-    Object.entries(form).forEach(([k, v]) => data.append(k, v));
-    data.append("role", role);
-    if (photo) data.append("photo", photo);
-    if (role === "doctor" && diploma) data.append("diploma", diploma);
+    // Noms de champs attendus par le backend
+    const payload = {
+      nom: form.lastName.trim(),
+      prenom: form.firstName.trim(),
+      dateNaissance: form.birthDate,
+      lieuNaissance: form.birthPlace.trim(),
+      email: form.email.trim().toLowerCase(),
+      password: form.password,
+      telephone: form.phone.replace(/\s/g, ""),
+    };
 
-    // TODO : brancher l'API  POST /api/auth/register  (multipart/form-data)
-    console.log("Inscription :", Object.fromEntries(data));
-    setTimeout(() => setLoading(false), 800);
+    setLoading(true);
+    setServerError("");
+    try {
+      if (role === "patient") {
+        await authApi.registerPatient(payload);
+      } else {
+        const data = new FormData();
+        Object.entries(payload).forEach(([k, v]) => data.append(k, v));
+        data.append("specialite", form.specialty);
+        data.append("numeroOrdre", form.licenseNumber.trim());
+        data.append("justificatifs", diploma);
+        await authApi.registerMedecin(data);
+      }
+      setDone(true);
+    } catch (e) {
+      setServerError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  /* ----------------------------- Écran de succès ----------------------------- */
+  if (done) {
+    return (
+      <AuthLayout
+        title="Inscription envoyée"
+        subtitle={role === "doctor" ? "Vérification en cours" : "Un dernier pas"}
+      >
+        <div className="flex flex-col items-center rounded-2xl bg-brand-50 p-8 text-center">
+          <CheckCircle2 size={44} className="text-brand-600" />
+          <p className="mt-4 text-sm text-brand-900/75">
+            {role === "doctor"
+              ? "Votre demande est en cours de vérification. Vous pourrez vous connecter dès qu'un administrateur aura validé votre compte. Vous recevrez un email avec sa décision."
+              : `Un email de confirmation a été envoyé à ${form.email}. Cliquez sur le lien qu'il contient pour activer votre compte.`}
+          </p>
+        </div>
+        <Link to="/login" className="btn-primary mt-6 w-full">
+          Aller à la connexion
+        </Link>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout
@@ -230,7 +277,6 @@ export default function Register() {
                       />
                     </label>
                   )}
-
                   {errors.diploma && <p className="mt-1.5 text-xs font-medium text-coral">{errors.diploma}</p>}
                   <p className="mt-2 text-xs text-brand-900/50">
                     Votre compte sera activé après vérification par un administrateur.
@@ -279,7 +325,7 @@ export default function Register() {
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <InputField label="Mot de passe" name="password" type="password" value={form.password} onChange={handleChange} error={errors.password} placeholder="8 caractères min." autoComplete="new-password" />
+              <InputField label="Mot de passe" name="password" type="password" value={form.password} onChange={handleChange} error={errors.password} placeholder="8 car. min. + 1 majuscule" autoComplete="new-password" />
               <InputField label="Confirmer" name="confirmPassword" type="password" value={form.confirmPassword} onChange={handleChange} error={errors.confirmPassword} placeholder="Répéter" autoComplete="new-password" />
             </div>
 
@@ -298,6 +344,10 @@ export default function Register() {
               </label>
               {errors.accepted && <p className="mt-1 text-xs font-medium text-coral">{errors.accepted}</p>}
             </div>
+
+            {serverError && (
+              <p className="rounded-xl bg-coral-soft px-4 py-3 text-sm font-medium text-coral">{serverError}</p>
+            )}
 
             <div className="flex gap-3">
               <button type="button" onClick={() => setStep(1)} className="btn-ghost !px-5" aria-label="Retour">
